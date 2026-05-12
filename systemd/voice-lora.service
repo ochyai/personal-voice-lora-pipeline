@@ -1,0 +1,31 @@
+[Unit]
+Description=Voice LoRA continuous training orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust WorkingDirectory and paths to your install location.
+WorkingDirectory=%h/voice-lora
+Environment="HF_HOME=%h/hf_cache"
+Environment="TOKENIZERS_PARALLELISM=false"
+Environment="PYTHONUNBUFFERED=1"
+# Adjust the python binary to your venv (must have torch + transformers + peft + pyyaml + datasets).
+ExecStart=%h/voice-lora/.venv/bin/python3 %h/voice-lora/pipeline/orchestrate.py
+StandardOutput=append:%h/voice-lora/logs/orchestrator.log
+StandardError=append:%h/voice-lora/logs/orchestrator.log
+
+# Restart on failure (transient OOM / disk full / etc). Clean exit (0) or explicit
+# halt (exit 2) does NOT trigger restart.
+Restart=on-failure
+RestartSec=60
+
+# Long-running. Disable activation timeout.
+TimeoutStartSec=0
+TimeoutStopSec=300
+
+# Make sure the GPU process exits when we stop the service.
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

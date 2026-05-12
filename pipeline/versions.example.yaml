@@ -1,0 +1,149 @@
+# Example training schedule — copy to `versions.yaml` and customize.
+#
+# Strategy: "Corpus growth, then penetration"
+#
+#   Stage 1 (v06-v08): grow the corpus over a few steps. Each step adds a new
+#   bundle of source material. The adapter is inherited from the previous step
+#   (resume_from: previous), so each new corpus extends a model that already
+#   has the prior data baked in.
+#
+#   Stage 2 (v09-v20): freeze the corpus. Iterate epochs at decaying learning
+#   rate. This is where "voice penetration" happens — the model goes from
+#   "knows the vocabulary" to "thinks in this style". Empirically a single
+#   epoch gets you ~70% of the way; epochs 2-6 are where the style locks in;
+#   epochs 7+ are diminishing returns plus risk of overfitting.
+#
+# Hardware note: timing below assumes NVIDIA GB10 (DGX Spark) with 128GB
+# unified memory, 8B base model, bf16 native (no quantization), seq_len 4096,
+# batch 1, grad_accum 8. About 25 seconds per optimizer step, ~3,300 steps per
+# epoch for ~100M-token corpora → ~23 hours per epoch.
+
+defaults:
+  # Pick a base model your domain already speaks. For Japanese, Swallow.
+  # For English, Llama-3.1-8B-Instruct works fine.
+  base_model: ~/models/Llama-3.1-Swallow-8B-v0.5
+  # Where to save checkpoints. Each version goes to <output_root>/voice-lora-<vid>/
+  output_root: ~/runs
+  # LoRA shape. r=64, alpha=128 = strong adapter, ~670MB. Works for 8B class.
+  seq_len: 4096
+  batch: 1
+  grad_accum: 8
+  rank: 64
+  alpha: 128
+  dropout: 0.05
+
+versions:
+  # ============== Stage 1: Corpus growth =================
+  v06:
+    description: "Seed corpus — first epoch on the curated initial dataset"
+    corpus: v6
+    # On the first run you typically don't resume from anything (fresh adapter).
+    # Or point this at an existing adapter to fork from someone else's voice.
+    # resume_from: null
+    lr: 5.0e-5
+    epochs: 1.0
+
+  v07:
+    description: "v7 = v6 + email + chat-export + slack + IDE-transcripts"
+    corpus: v7
+    resume_from: previous
+    lr: 5.0e-5
+    epochs: 1.0
+
+  v08:
+    description: "v8 = v7 + interview transcripts + talk notes + manuscripts"
+    corpus: v8
+    resume_from: previous
+    lr: 5.0e-5
+    epochs: 1.0
+
+  # ============== Stage 2: Corpus penetration (12 epochs on v8) =================
+  # Same corpus every iteration. Only lr changes. This is "Train, Train, Train"
+  # — what makes the model actually *write like* your subject, not just *know*
+  # their topics.
+
+  v09:
+    description: "v8 penetration epoch 2 — lr decay begins"
+    corpus: v8
+    resume_from: previous
+    lr: 4.0e-5
+    epochs: 1.0
+
+  v10:
+    description: "v8 penetration epoch 3"
+    corpus: v8
+    resume_from: previous
+    lr: 3.5e-5
+    epochs: 1.0
+
+  v11:
+    description: "v8 penetration epoch 4"
+    corpus: v8
+    resume_from: previous
+    lr: 3.0e-5
+    epochs: 1.0
+
+  v12:
+    description: "v8 penetration epoch 5"
+    corpus: v8
+    resume_from: previous
+    lr: 2.5e-5
+    epochs: 1.0
+
+  v13:
+    description: "v8 penetration epoch 6"
+    corpus: v8
+    resume_from: previous
+    lr: 2.0e-5
+    epochs: 1.0
+
+  v14:
+    description: "v8 penetration epoch 7"
+    corpus: v8
+    resume_from: previous
+    lr: 1.7e-5
+    epochs: 1.0
+
+  v15:
+    description: "v8 penetration epoch 8"
+    corpus: v8
+    resume_from: previous
+    lr: 1.4e-5
+    epochs: 1.0
+
+  v16:
+    description: "v8 penetration epoch 9"
+    corpus: v8
+    resume_from: previous
+    lr: 1.1e-5
+    epochs: 1.0
+
+  v17:
+    description: "v8 penetration epoch 10"
+    corpus: v8
+    resume_from: previous
+    lr: 9.0e-6
+    epochs: 1.0
+
+  v18:
+    description: "Long-context (8K seq_len) — half epoch for long-form coherence"
+    corpus: v8
+    resume_from: previous
+    seq_len: 8192
+    grad_accum: 16
+    lr: 7.0e-6
+    epochs: 0.5
+
+  v19:
+    description: "Back to 4K, fine-grained polish"
+    corpus: v8
+    resume_from: previous
+    lr: 5.0e-6
+    epochs: 1.0
+
+  v20:
+    description: "FINAL pass — lowest lr"
+    corpus: v8
+    resume_from: previous
+    lr: 3.0e-6
+    epochs: 0.5

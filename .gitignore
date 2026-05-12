@@ -1,0 +1,30 @@
+# Private data — never commit
+raw/
+data/
+runs/
+models/
+hf_cache/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Trained artifacts — store on the GPU host or over Tailscale, not in git
+*.safetensors
+*.pt
+*.bin
+adapter_model.*
+optimizer.*
+trainer_state.json
+training_args.bin
+
+# Runtime state (re-generated)
+state.json
+logs/
+*.log
+
+# OS / editor cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp

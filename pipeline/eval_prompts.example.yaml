@@ -1,0 +1,58 @@
+# Evaluation prompts for compare_checkpoints.py.
+#
+# Three categories that diagnose different aspects of LoRA voice transfer:
+#
+#   known     — concepts your subject has explicitly written about. Tests
+#               whether the model reproduces their *framing* of the concept,
+#               not just the vocabulary. Baseline often hallucinates a
+#               textbook definition; a converged LoRA invents the concept
+#               from inside the subject's worldview.
+#
+#   generalize — topics your subject hasn't written much about. Tests whether
+#                the style transfers off-domain. A converged LoRA might still
+#                produce subject-flavored prose ("私がこの状況を最初に認識したのは…"
+#                / "I first noticed this in…") even on unfamiliar topics.
+#                Bad LoRAs revert to textbook prose here.
+#
+#   style     — formats your subject habitually uses (essays, advice to
+#               students, late-night reflections, opening lines of a column).
+#               Tests micro-stylistic features: sentence rhythm, self-questioning,
+#               characteristic openings, prefered punctuation density.
+#
+# Replace these with prompts that probe your subject's voice. Same seed is
+# used for all checkpoints so you can directly compare outputs.
+
+prompts:
+  - tag: known:core_concept_A
+    prompt: |
+      <Subject's signature concept A — ask them to explain it in their own words.>
+
+  - tag: known:core_concept_B
+    prompt: |
+      <Subject's signature concept B — leave the prompt as an opening invitation,
+       e.g. "<concept> という概念について書いてみます。"
+       so the model continues in essay mode.>
+
+  - tag: generalize:off_domain_A
+    prompt: |
+      <Off-domain topic A — semiconductor shortages, economic policy, a sport,
+       anything outside the subject's usual writing. Phrase as
+       "Let me state my view on <topic>." so the model has to commit to a
+       voice without category cues.>
+
+  - tag: generalize:off_domain_B
+    prompt: |
+      <Off-domain topic B — different category from A. Open-ended is best.>
+
+  - tag: style:late_night_essay
+    prompt: |
+      <Sensory opening typical of your subject — e.g.
+       "Working alone late at night, I paused. Outside the window…"
+       Tests whether the model picks up sentence rhythm and short-paragraph
+       cadence without needing topic priming.>
+
+  - tag: style:advice_to_students
+    prompt: |
+      <Subject's habitual advice-giving register — e.g.
+       "There's something I want to tell students who are about to start research."
+       Tests whether the model produces the subject's characteristic mentor voice.>
