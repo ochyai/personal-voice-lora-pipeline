@@ -80,7 +80,7 @@ corpus): ~25s/step, ~23h/epoch, ~14 days for the full 15-version schedule.
 
 The training pipeline assumes you already have your text in `~/voice-lora/raw/`.
 Workshop participants start one step earlier — assembling their own personal
-archive (the generic version of Ochiai's `homo-convivium`). See
+text archive (the same kind of collected-writings archive the instructor built). See
 [`collect/README.md`](collect/README.md) for per-source export guides and
 converter scripts (`files_to_seed_jsonl.py`, `twitter_archive_to_jsonl.py`,
 `gmail_mbox_to_jsonl.py`) that produce the `raw/*.jsonl` files build_corpus expects.
