@@ -1,7 +1,16 @@
 # Setup on a fresh GPU host
 
+> 日本語の通し手順は [workshop-ja.md](workshop-ja.md) にあります。この setup.md は
+> インストールの細部とトラブル対応のリファレンスです。
+
 Reference target: NVIDIA GB10 (DGX Spark), Ubuntu 24.04, CUDA 13. Substitute
 paths as needed.
+
+**Two paths.** Big-GPU (≥24GB) trains in native bf16 — nothing extra to install.
+Small-GPU / Colab (12-16GB) uses 4-bit QLoRA: `pip install bitsandbytes`, copy
+`versions.mini.example.yaml` (it sets `qlora: true`), and you're done. The
+orchestrator passes `--qlora` to the trainer automatically when the YAML has
+`qlora: true`. See the QLoRA section at the bottom for details.
 
 ## 1. System prerequisites
 
@@ -94,35 +103,32 @@ ssh gpu-host "cat ~/voice-lora/state.json | jq"
 ssh gpu-host "nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,power.draw --format=csv"
 ```
 
-## VRAM-constrained alternative (QLoRA)
+## VRAM-constrained path (QLoRA) — Colab / small GPU
 
-If your GPU has < 24GB VRAM, replace `train_bf16_lora.py` with a 4-bit
-QLoRA equivalent. Install bitsandbytes:
+QLoRA is built in. You don't edit any code — `train_bf16_lora.py` already
+takes a `--qlora` flag that loads the base model in 4-bit (nf4).
 
 ```bash
 pip install bitsandbytes
+cp pipeline/versions.mini.example.yaml pipeline/versions.yaml   # has qlora: true
 ```
 
-Then in the training script, load the model with:
+`versions.mini.example.yaml` sets `qlora: true` in `defaults`, and the
+orchestrator forwards `--qlora` to the trainer for every version. A 10-version
+schedule (2 growth + 8 penetration) at `seq_len: 2048` fits ~12-16GB VRAM.
 
-```python
-from transformers import BitsAndBytesConfig
+To run a single version by hand (e.g. on Colab without systemd):
 
-bnb = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_use_double_quant=True,
-)
-model = AutoModelForCausalLM.from_pretrained(
-    args.model, quantization_config=bnb, device_map="auto",
-)
-from peft import prepare_model_for_kbit_training
-model = prepare_model_for_kbit_training(model)
+```bash
+python pipeline/train_bf16_lora.py \
+    --data data/corpus_v6.jsonl \
+    --model ~/models/Llama-3.1-Swallow-8B-v0.5 \
+    --output ~/runs/voice-lora-v01 \
+    --qlora --seq_len 2048 --grad_accum 16 --lr 5e-5 --epochs 1
 ```
 
-…and the rest of the training code is unchanged. Expect ~30% slower
-than bf16 native, but fits in 12-16GB.
+Expect ~30% slower than bf16 native, but the adapter output is the same shape.
+If you still OOM, drop `--seq_len` to 1024 first.
 
 ## Common failures
 

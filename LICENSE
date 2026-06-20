@@ -1,0 +1,37 @@
+MIT License
+
+Copyright (c) 2026 Yoichi Ochiai (落合陽一)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+NOTE ON THE EXAMPLE OUTPUT / 例文についての注記
+
+The MIT License above covers the *code and documentation* in this repository.
+
+The generated text in `examples/` (e.g. `voice_compare_report_example.md`) is
+model output trained on the collected writings of Yoichi Ochiai. It is included
+for reference and educational purposes only. Please do not redistribute the
+example text as if it were your own writing, and do not present it as authentic
+statements by Yoichi Ochiai.
+
+`examples/` 以下の生成テキストは、落合陽一の著作群を学習させたモデルの出力です。
+参考・教育目的でのみ同梱しています。例文をそのまま再配布したり、落合陽一本人の
+発言であるかのように提示したりしないでください。

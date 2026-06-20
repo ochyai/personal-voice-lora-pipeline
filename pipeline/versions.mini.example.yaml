@@ -1,0 +1,79 @@
+# 軽量スケジュール例（小型GPU / Colab 向け・QLoRA）
+# Mini schedule for small GPUs (Colab T4 16GB, RTX 3060/4060) using 4-bit QLoRA.
+#
+# `versions.example.yaml` の short 版です。コーパス成長を 2 段、浸透を 8 段に縮め、
+# `qlora: true` で 4-bit ロードにします。だいたい 1 週間以内 / Colab なら分割で。
+# 使い方:  cp pipeline/versions.mini.example.yaml pipeline/versions.yaml
+#
+# A trimmed copy of versions.example.yaml: 2 growth + 8 penetration, QLoRA on.
+# Fits ~12-16GB VRAM. Copy to versions.yaml to use.
+
+defaults:
+  base_model: ~/models/Llama-3.1-Swallow-8B-v0.5
+  output_root: ~/runs
+  qlora: true          # ← 4-bit ロード（小型GPU）。pip install bitsandbytes が必要
+  seq_len: 2048        # 小型GPUでは短めから。OOM しなければ 4096 に上げてよい
+  batch: 1
+  grad_accum: 16       # 実効バッチを保つため accum を多めに
+  rank: 64
+  alpha: 128
+  dropout: 0.05
+
+versions:
+  # ===== Stage 1: コーパス成長（2段）=====
+  v01:
+    description: "種コーパス（最初に手で集めたデータ）で1エポック"
+    corpus: v6           # build_corpus.py の BUILD_PLAN のキーに合わせる
+    lr: 5.0e-5
+    epochs: 1.0
+
+  v02:
+    description: "v6 + メール/チャット/講演など全部のせ"
+    corpus: v8
+    resume_from: previous
+    lr: 5.0e-5
+    epochs: 1.0
+
+  # ===== Stage 2: 浸透（同じコーパスで lr を下げながら8エポック）=====
+  v03:
+    description: "浸透 epoch1 — lr decay 開始"
+    corpus: v8
+    resume_from: previous
+    lr: 4.0e-5
+    epochs: 1.0
+  v04:
+    corpus: v8
+    resume_from: previous
+    lr: 3.0e-5
+    epochs: 1.0
+  v05:
+    corpus: v8
+    resume_from: previous
+    lr: 2.2e-5
+    epochs: 1.0
+  v06:
+    corpus: v8
+    resume_from: previous
+    lr: 1.6e-5
+    epochs: 1.0
+  v07:
+    corpus: v8
+    resume_from: previous
+    lr: 1.1e-5
+    epochs: 1.0
+  v08:
+    corpus: v8
+    resume_from: previous
+    lr: 8.0e-6
+    epochs: 1.0
+  v09:
+    corpus: v8
+    resume_from: previous
+    lr: 5.0e-6
+    epochs: 1.0
+  v10:
+    description: "最終パス — 一番低い lr"
+    corpus: v8
+    resume_from: previous
+    lr: 3.0e-6
+    epochs: 1.0

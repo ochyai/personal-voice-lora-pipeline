@@ -1,184 +1,244 @@
 # personal-voice-lora-pipeline
 
-> A pipeline for training a LoRA adapter that **writes like a specific person**
-> from their accumulated text. Built and tuned on an NVIDIA GB10 (DGX Spark)
-> for a ~100M-token Japanese-essayist corpus.
+> **自分のデータで、自分の「声」で書くAIを作るキット。**
+> あなたが今までに書いてきた文章（本・記事・メール・チャット・講演の文字起こし）を
+> 食べさせて、あなたの文体で書きつづける小さなモデル（LoRA）を育てます。
 
-This repo packages the practical scaffolding: orchestrator, corpus builder,
-training script, evaluation harness, and systemd unit. The strategy it
-encodes — **corpus growth, then penetration** — is what made the difference
-between "model knows the topics" and "model writes in this voice."
+English: [README.en.md](README.en.md) ／ ワークショップ当日の手順: [docs/workshop-ja.md](docs/workshop-ja.md)
 
----
-
-## What this is for
-
-You have ~50-200M tokens of text written by one person (books, articles,
-emails, chat logs, talk transcripts). You want a model that, given a prompt
-the person has never seen, produces something that reads like them — same
-sentence rhythm, same idiosyncratic turns, same way of opening an essay. Not
-a chatbot; a continuation engine in their voice.
-
-This is **continued pre-training as a LoRA adapter** on top of a strong base
-model (Llama-3.1-Swallow-8B for Japanese, swap for your language). LoRA, not
-full finetune, because the base's general knowledge stays intact while the
-adapter encodes the voice. r=64, alpha=128 across all linear modules gives a
-~670MB adapter — small enough to ship, large enough to carry the style.
-
-It is **not** instruction tuning, **not** RLHF, **not** dialog SFT. Those are
-later steps if you want a chatbot. The objective here is one thing: pure
-continuation in voice.
+このリポジトリは、落合塾のワークショップ用の配布キットです。
+**参加者ひとりひとりが、自分のテキストを使って、自分の声のモデルを作る**ことを目的にしています。
+落合陽一のモデル `ochiai-v20` も、まさにこの同じ手順で作りました。`examples/` にその出力例が入っています（あなたも同じものが作れます）。
 
 ---
 
-## Why "corpus growth, then penetration"
+## これは何をするもの？
 
-The trap on a first attempt is to train a single epoch on a fixed corpus and
-call it done. The model will reliably reproduce the subject's *vocabulary*
-(named concepts, signature terms) but write them inside a textbook frame
-("This concept refers to…"). It hasn't internalized the voice; it's
-*translating into* the voice from a generic frame.
+ふつうのチャットボットを作るのではありません。作るのは「**あなたの文体で続きを書く生成エンジン**」です。
 
-What works better is two phases:
+- 見たことのないお題を渡しても、**あなたっぽいリズム・言い回し・書き出し**で文章を続けてくれる。
+- 中身は、強いベースモデル（日本語なら `Llama-3.1-Swallow-8B`）の上に、
+  あなたの文体だけを覚えさせた **LoRA という小さな追加パーツ（約670MB）** です。
+- ベースの一般知識はそのまま残るので、文体だけを上から薄く塗るイメージです。
 
-1. **Growth phase** (typically 2-3 versions). Start with a curated seed
-   corpus. Each next version adds another bundle of source material — emails,
-   chat logs, talk transcripts, manuscripts. Each version is one epoch.
-   Adapter inherits from the previous version. The model picks up vocabulary
-   and topic priors fast (loss drops from ~1.2 to ~0.95 in the first epoch).
-
-2. **Penetration phase** (typically 10-12 versions). Freeze the corpus at
-   the largest size. Iterate epochs at decaying learning rate (5e-5 → 3e-6
-   over ~12 epochs). This is where style locks in. Around epoch 4-6 you'll
-   see the model stop opening with "Let me explain…" and start opening with
-   the subject's actual signature moves — sentence fragments, sensory
-   openings, self-questioning. By epoch 10+ the off-domain prompts also
-   carry the voice.
-
-The total schedule is encoded in [`pipeline/versions.example.yaml`](pipeline/versions.example.yaml).
-On a GB10 with 8B base, ~100M tokens, seq_len 4096, ~25s/step, ~3,300
-steps/epoch, ~23h/epoch → **~2 weeks of continuous training** for 15
-versions.
+やらないこと: 命令に従う調整（instruction tuning）・対話の調教・RLHF。それらは後から足せます。
+ここでの目的はただ一つ、「**あなたの声で書きつづける**」ことです。
 
 ---
 
-## What's in the box
+## いちばん大事な考え方：「増やす → 染み込ませる」
+
+最初にみんなが失敗するのは、**1回だけ学習させて終わりにする**ことです。
+それだと、モデルはあなたの「単語」は覚えるのに、教科書みたいな文体で書いてしまいます
+（「〜とは、〜のことである」）。声が染みていないのです。
+
+うまくいくのは、2つの段階に分けるやり方です。
+
+1. **増やす段階（コーパス成長, 2〜3回）**
+   まず手で集めた「種テキスト」から始める。次の回ごとに、メール・チャット・講演など
+   別の素材を足していく。1回＝1エポック。前の回の成果を引き継いで続ける。
+   → 語彙とトピックは、ここで速く入ります。
+
+2. **染み込ませる段階（浸透, 8〜12回）**
+   テキストはこれ以上増やさず固定。学習率（lr）を少しずつ下げながら、何度も読み返させる。
+   → ここで**文体が定着**します。4〜6回目あたりで、書き出しが「説明しましょう」ではなく
+   あなた自身の癖（短い文、感覚的な入り、自問）に変わってきます。
+
+くわしい理由は [docs/corpus-strategy.md](docs/corpus-strategy.md) に書きました。
+
+---
+
+## 必要なもの
+
+- **あなたのテキスト**：目安は 50〜200M トークン（日本語で約1億〜4億字）。
+  少なくても動きますが、30M字より少ないと“丸暗記”しがちです（[docs/corpus-strategy.md](docs/corpus-strategy.md) 参照）。
+- **GPU**：下の2コースから選びます。
+
+### GPUは2コースあります
+
+| | A. 自前GPUコース（bf16） | B. 小型GPU / Colab コース（QLoRA） |
+|---|---|---|
+| VRAM | 24GB以上（DGX Spark, A100, RTX 4090 など） | 12〜16GB（Colab T4, RTX 3060/4060 など） |
+| 学習スクリプトの指定 | そのまま | `--qlora` を付ける（`pip install bitsandbytes` 必要） |
+| 使うスケジュール | `versions.example.yaml`（15段） | `versions.mini.example.yaml`（10段・軽量） |
+| 速さ | 基準 | だいたい3割ゆっくり |
+| できあがり | 同じ形のLoRA | 同じ形のLoRA |
+
+どちらでも**できあがるモデルの形は同じ**です。手元のGPUに合わせて選んでください。
+
+---
+
+## まず：自分のデータを集める（あなたの homo-convivium を作る）
+
+学習の前に、**自分が書いた文章を集めて `raw/` に整える**必要があります。
+落合はこの個人アーカイブを `homo-convivium` と呼んでいますが、**参加者は自分専用のそれを作るところから**始めます。
+note・ブログ・書籍・X・メールなどからの集め方と、変換スクリプトを
+[`collect/`](collect/README.md) にまとめました。**最初にここを読んでください。**
+
+```bash
+# 例：note・ブログ・原稿などをフォルダに集めて → 種コーパスに変換
+python collect/files_to_seed_jsonl.py --in ~/my-writings --out ~/voice-lora/raw/seed_corpus.jsonl
+```
+
+データがそろったら、下の手順に進みます。
+
+## はじめかた（手順）
+
+> もっと丁寧な当日用の手順は [docs/workshop-ja.md](docs/workshop-ja.md) にあります。
+> インストールの細部は [docs/setup.md](docs/setup.md) を見てください。
+
+### 1. リポジトリを置いて、道具を入れる
+
+```bash
+git clone https://github.com/ochyai/personal-voice-lora-pipeline.git ~/voice-lora
+cd ~/voice-lora
+python3 -m venv .venv && source .venv/bin/activate
+pip install torch transformers peft datasets pyyaml python-docx
+# B. 小型GPUコースの人は、これも:
+pip install bitsandbytes
+```
+
+### 2. ベースモデルをダウンロードする
+
+```bash
+mkdir -p ~/models
+pip install huggingface-hub
+hf download tokyotech-llm/Llama-3.1-Swallow-8B-v0.5 \
+    --local-dir ~/models/Llama-3.1-Swallow-8B-v0.5
+```
+
+日本語以外なら `meta-llama/Llama-3.1-8B-Instruct` など、その言語が得意な8Bクラスを選びます。
+
+### 3. 自分のテキストを `raw/` に入れる
+
+```
+~/voice-lora/raw/
+├── seed_corpus.jsonl     ← 最初の種（手で集めた自分の文章）
+├── email.jsonl           ← メール（自分が送ったものだけ）
+├── slack_team_a.jsonl    ← チャットの書き出し
+├── interviews/*.txt      ← 対談・インタビューの文字起こし
+├── presentations/*.md    ← 講演メモ・原稿
+└── manuscripts/*.docx    ← 本の下書きなど
+```
+
+`raw/` と `data/` は **git に上がりません**（個人情報なので最初から除外済み）。
+
+### 4. 「どのデータをどう食べさせるか」を書く
+
+`pipeline/build_corpus.py` の下のほうにある **`BUILD_PLAN`** を、自分のデータの置き場所に合わせて書き換えます。
+よくある形（メールJSONL・Slack書き出し・docx・テキストの束）を読み込む関数が
+最初から入っているので、必要なものをコピーして直すだけです。
+
+> 落合の実例（homo-convivium のアーカイブを `build_corpus` にどう繋いだか）は、
+> ワークショップで手元のサンプルとしてお見せします。中身（本文）は配布しません。
+
+### 5. スケジュールと評価プロンプトを用意する
+
+```bash
+# A. 自前GPU:
+cp pipeline/versions.example.yaml pipeline/versions.yaml
+# B. 小型GPU / Colab:
+cp pipeline/versions.mini.example.yaml pipeline/versions.yaml
+
+cp pipeline/eval_prompts.example.yaml pipeline/eval_prompts.yaml
+```
+
+`eval_prompts.yaml` には、**自分について問う6つのお題**を書きます（自分の代表的な概念・苦手な話題・書き出しの癖、の3種類）。
+ファイル内のコメントに書き方の例があります。
+
+### 6. 学習を走らせる（止まっても自動で続く）
+
+長時間の学習なので、systemd に任せて「寝てる間も回る」状態にします。
+
+```bash
+cp systemd/voice-lora.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+loginctl enable-linger $USER          # ログアウトしても続く
+systemctl --user enable --now voice-lora.service
+```
+
+途中でクラッシュしても、`state.json` に進み具合が残っているので、
+**終わった版はとばして、失敗した版だけ最大3回までやり直し**ます。
+
+### 7. 見守る
+
+```bash
+journalctl --user -u voice-lora.service -f     # 全体ログ
+tail -f ~/voice-lora/logs/v06.log              # 各版のログ
+cat ~/voice-lora/state.json                    # 進み具合
+```
+
+各版が終わるたびに、同じお題を全チェックポイントで生成した
+**比較レポート（マークダウン）**が自動で出ます。上から下へ読むと、
+教科書っぽい文 → あなたの文体、へ変わっていくのが見えます。
+実例は [`examples/voice_compare_report_example.md`](examples/voice_compare_report_example.md)。
+
+---
+
+## できたモデルの使い方
+
+学習が終わると `~/runs/voice-lora-<版>/final_adapter/` に LoRA（約670MB）ができます。
+これをベースモデルと一緒に読み込めば、あなたの声で書けます。
+Ollama や vLLM に載せて、ふだん使いのモデルにもできます（落合の `ochiai-v20` がこの形です）。
+
+---
+
+## できること・できないこと
+
+**できること**：お題の外側でも文体が崩れない。明示の指示なしでもスタイルが保つ。
+配って動かせる成果物（LoRA）が手に入る。
+
+**できないこと**：事実の正確さは保証されません
+（半導体の話で「WES（Water-Ethanol-Solvent）」のような**実在しない用語を堂々と作る**ことがあります）。
+道具の利用や、長い対話の一貫性もここでは扱いません。それらは後から足す工程です。
+
+→ **下書きの量産機としては優秀。事実を書く調査アシスタントとしては使わないこと。**
+
+---
+
+## プライバシーの線引き（だいじ）
+
+コーパスにはメール・非公開チャット・内部資料が入ります。
+**学習はネットから隔離したGPUの中で完結させ、コーパスや学習済みLoRAをGitHubに上げない**こと。
+このリポジトリの `.gitignore` は最初からそう作ってあります（`raw/ data/ runs/ models/` は除外）。
+公開していいのは「パイプラインのコード」と「出力の例」だけ、と決めておくと安全です。
+
+---
+
+## 中身の一覧
 
 ```
 personal-voice-lora-pipeline/
+├── collect/                       # ★ステップ0：自分のデータを集める（あなたのhomo-conviviumを作る）
+│   ├── README.md                  #   集め方ガイド（note/X/Gmail…→ raw/ へ）
+│   ├── files_to_seed_jsonl.py     #   txt/md/docx/pdf フォルダ → 種コーパス
+│   ├── twitter_archive_to_jsonl.py#   X公式アーカイブ → 自分のツイートだけ
+│   └── gmail_mbox_to_jsonl.py     #   Google Takeout mbox → 自分が送ったメールだけ
 ├── pipeline/
-│   ├── orchestrate.py            # The state machine. Reads versions.yaml,
-│   │                               runs versions sequentially, resumes after
-│   │                               failure. systemd-managed.
-│   ├── build_corpus.py           # Template. Source-loader functions for
-│   │                               common shapes (mbox-JSONL, Slack export,
-│   │                               docx, text-glob). Edit BUILD_PLAN.
-│   ├── train_bf16_lora.py        # bf16 LoRA training. No quantization
-│   │                               (GB10 has the VRAM). 4-bit QLoRA is a
-│   │                               trivial swap if you're VRAM-bound.
-│   ├── compare_checkpoints.py    # Eval harness. Generates the same prompts
-│   │                               from every checkpoint, writes a markdown
-│   │                               diff report.
-│   ├── eval_prompts.example.yaml # The 6-prompt diagnostic set (known /
-│   │                               generalize / style).
-│   └── versions.example.yaml     # 15-version growth + penetration schedule.
-├── systemd/
-│   └── voice-lora.service        # User-mode unit. linger + Restart=on-failure.
-├── examples/
-│   └── voice_compare_report_example.md   # Real ~100M-token Japanese-corpus
-│                                            output, ~58KB. Read top-to-bottom
-│                                            to see voice transfer in action.
+│   ├── orchestrate.py             # 司令塔。versions.yaml を読んで順番に学習。落ちても再開
+│   ├── build_corpus.py            # コーパス作成のテンプレ。BUILD_PLAN を自分用に書き換える
+│   ├── train_bf16_lora.py         # 学習本体。bf16 と --qlora（4bit）の両対応
+│   ├── compare_checkpoints.py     # 評価。同じお題を各版で生成して比較レポートを出す
+│   ├── eval_prompts.example.yaml  # 評価お題6本（known / generalize / style）
+│   ├── versions.example.yaml      # 15段スケジュール（自前GPU向け）
+│   └── versions.mini.example.yaml # 10段の軽量スケジュール（小型GPU / QLoRA向け）
+├── systemd/voice-lora.service     # ユーザーsystemdユニット。落ちても自動再起動
+├── examples/voice_compare_report_example.md  # 実物の出力例（ochiai-v20）。上から下へ読む
 ├── docs/
-│   ├── setup.md                  # Step-by-step install on a fresh GPU host
-│   ├── lessons.md                # What worked, what failed, gotchas
-│   └── corpus-strategy.md        # Why corpus growth → penetration works
-├── .gitignore
-└── README.md
+│   ├── workshop-ja.md             # ★ワークショップ当日の手順（優しい日本語）
+│   ├── setup.md                   # まっさらなGPUへの導入手順
+│   ├── corpus-strategy.md         # 「増やす→染み込ませる」がなぜ効くか
+│   └── lessons.md                 # うまくいったこと・失敗したこと・落とし穴
+├── LICENSE                        # MIT（コード）。例文は参考用・著作権あり
+├── README.md / README.en.md
+└── .gitignore
 ```
 
 ---
 
-## Quick start
+## ライセンス
 
-```bash
-# 1. clone next to your data
-git clone https://github.com/<you>/personal-voice-lora-pipeline.git ~/voice-lora
-cd ~/voice-lora
-
-# 2. install deps
-python3 -m venv .venv && source .venv/bin/activate
-pip install torch transformers peft datasets pyyaml python-docx
-
-# 3. download a base model
-mkdir -p ~/models
-hf download tokyotech-llm/Llama-3.1-Swallow-8B-v0.5 --local-dir ~/models/Llama-3.1-Swallow-8B-v0.5
-
-# 4. drop your raw data into ~/voice-lora/raw/
-#    (JSONL files, text dirs, docx — whatever shapes match build_corpus.py)
-
-# 5. customize the pipeline
-cp pipeline/versions.example.yaml pipeline/versions.yaml
-cp pipeline/eval_prompts.example.yaml pipeline/eval_prompts.yaml
-# edit build_corpus.py BUILD_PLAN to match your raw/ layout
-# edit pipeline/eval_prompts.yaml with prompts about your subject
-# edit pipeline/versions.yaml hyperparams if needed
-
-# 6. install systemd service
-cp systemd/voice-lora.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-loginctl enable-linger $USER   # survives logout
-systemctl --user enable --now voice-lora.service
-
-# 7. watch
-journalctl --user -u voice-lora.service -f
-# or
-tail -f ~/voice-lora/logs/v06.log
-cat ~/voice-lora/state.json
-```
-
-The orchestrator will work through v06 → v20, resuming each from the previous
-version's `final_adapter`. State is persisted in `state.json`; if the service
-restarts (process crash, OOM, host reboot), it skips completed versions and
-retries failed ones up to MAX_RETRIES=3.
-
----
-
-## Hardware
-
-Designed for **NVIDIA GB10 (DGX Spark, 128GB unified memory)**, but no GB10-
-specific code. Works on any single GPU with ≥24GB VRAM for an 8B base in
-bf16 + LoRA. For smaller GPUs, swap the trainer for QLoRA 4-bit (see
-[docs/setup.md](docs/setup.md)).
-
-Reference timing (GB10, Llama-3.1-Swallow-8B, bf16, seq_len 4096, batch 1,
-grad_accum 8, ~100M-token corpus):
-
-| | per step | per epoch | per version |
-|---|---|---|---|
-| 4K seq_len  | ~25s   | ~23h | ~23h |
-| 8K seq_len  | ~50s   | ~46h | ~23h (only 0.5 epoch) |
-
-Total schedule (15 versions): **~14 days continuous**. Power draw stays
-under 70W; GPU runs around 80°C with passive case cooling.
-
----
-
-## Cost frame
-
-What this method gets you that prompt engineering does not: the model writes
-*from inside* the voice, not *toward* it. Off-domain generalization. Style
-that holds without explicit anchoring. An artifact you can deploy.
-
-What it doesn't get you: factual loyalty (the model will confidently make up
-"WES (Water-Ethanol-Solvent)" in a semiconductor essay), tool use, multi-turn
-coherence. Those are post-training steps that compose on top.
-
-If you only need the voice for a few minutes of writing, prompt with a long
-context window and a high-quality style guide. If you need a deployable
-artifact, train this.
-
----
-
-## License
-
-For my use; ask before redistribution.
+- **コードとドキュメント：MIT**（[LICENSE](LICENSE)）。自由に使い、改変し、配布できます。
+- ただし `examples/` の生成テキストは、落合陽一の著作群を学習させたモデルの出力です。
+  **参考・教育目的でのみ**同梱しています。そのまま自分の文章として再配布したり、
+  落合陽一本人の発言であるかのように出したりしないでください。

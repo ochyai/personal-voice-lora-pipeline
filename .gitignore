@@ -28,3 +28,11 @@ logs/
 .idea/
 .vscode/
 *.swp
+
+# Local-only worked example (the teacher's own case — not for public distribution)
+WORKLOG-ja.md
+pipeline/build_corpus_ochiai.py
+pipeline/*_ochiai.py
+pipeline/*.ochiai.yaml
+pipeline/versions.yaml
+pipeline/eval_prompts.yaml

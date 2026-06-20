@@ -145,6 +145,8 @@ def run_version(vid, vspec, defaults, prior_done):
         ]
         if resume_from:
             cmd += ["--resume_from", resume_from]
+        if cfg.get("qlora"):
+            cmd += ["--qlora"]
 
         log_fp.write(f"cmd: {' '.join(shlex.quote(c) for c in cmd)}\n\n")
         log_fp.flush()

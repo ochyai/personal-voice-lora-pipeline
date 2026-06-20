@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""bf16 LoRA training for causal LMs on a single GPU.
+"""LoRA training for causal LMs on a single GPU — bf16 native or 4-bit QLoRA.
 
 Designed for the NVIDIA GB10 (DGX Spark, 128GB unified) but works on any
 GPU with enough VRAM for an 8B-class model in bf16 + LoRA + gradient
-checkpointing (≈ 25GB for the configuration here). No bitsandbytes, no
-quantization — uses native bf16 throughout. Switch to QLoRA (4-bit) if your
-GPU is < 24GB; see README for the alternative training script.
+checkpointing (≈ 25GB for the configuration here). Native bf16 by default —
+no quantization, no bitsandbytes.
+
+If your GPU is smaller than ~24GB (e.g. a 16GB Colab T4, an RTX 3060/4060),
+pass `--qlora`. The base model is then loaded in 4-bit (nf4) and the LoRA
+adapter trains on top of it. Same adapter shape, same output, ~12-16GB VRAM,
+~30% slower. Requires `pip install bitsandbytes`.
 
 Continuous-friendly: when invoked with `--resume_from <adapter_dir>`, loads
 the LoRA weights from that dir before starting a fresh training run on this
@@ -50,6 +54,9 @@ def main():
     ap.add_argument("--batch", type=int, default=1)
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--max_records", type=int, default=None)
+    ap.add_argument("--qlora", action="store_true",
+                    help="Load the base model in 4-bit (nf4) for small GPUs (<24GB). "
+                         "Requires bitsandbytes. ~30%% slower, same adapter output.")
     ap.add_argument("--resume_from", default=None,
                     help="Path to adapter to resume from")
     args = ap.parse_args()
@@ -62,13 +69,28 @@ def main():
         tok.pad_token = tok.eos_token
     tok.padding_side = "right"
 
-    print(f"Loading model (bf16): {args.model}")
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
+    load_kwargs = dict(
         dtype=torch.bfloat16,
         device_map="auto",
         attn_implementation="sdpa",  # built-in scaled dot product attention
     )
+    if args.qlora:
+        print(f"Loading model (4-bit QLoRA): {args.model}")
+        from transformers import BitsAndBytesConfig
+        load_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+    else:
+        print(f"Loading model (bf16): {args.model}")
+    model = AutoModelForCausalLM.from_pretrained(args.model, **load_kwargs)
+
+    if args.qlora:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=True)
 
     if args.resume_from and Path(args.resume_from).exists():
         print(f"Resuming from adapter: {args.resume_from}")

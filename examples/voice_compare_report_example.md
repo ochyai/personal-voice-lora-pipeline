@@ -1,5 +1,11 @@
 # Example: Voice LoRA Checkpoint Comparison — Japanese essayist corpus
 
+> **注記 / Note:** 以下は落合陽一の著作群を学習させたモデル（`ochiai-v20`）の出力例です。
+> 参考・教育目的でのみ同梱しています。再配布や「落合本人の発言」としての提示はしないでください。
+> The text below is model output trained on Yoichi Ochiai's writings, included for
+> reference/education only — do not redistribute it or present it as authentic Ochiai
+> statements. See [LICENSE](../LICENSE).
+>
 > This is real output from `compare_checkpoints.py` after training a LoRA on a
 > Japanese author's collected writings (~100M tokens: published books, note
 > articles, interview transcripts, weekly broadcast transcripts, social media,
