@@ -1,5 +1,14 @@
 # personal-voice-lora-pipeline
 
+<!-- about -->
+> **このリポは何か**：自分が書いた文章でLoRAを学習させ、言語モデルが自分の文体で続きを書けるようにする教材。
+>
+> **What this is**: This workshop kit trains a LoRA adapter on your writing so a language model can continue text in your style.
+>
+> **まず開く / Start here**：`collect/`
+<!-- /about -->
+
+
 > **自分のデータで、自分の「声」で書くAIを作るキット。**
 > あなたが今までに書いてきた文章（本・記事・メール・チャット・講演の文字起こし）を
 > 食べさせて、あなたの文体で書きつづける小さなモデル（LoRA）を育てます。
